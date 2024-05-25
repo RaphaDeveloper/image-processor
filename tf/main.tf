@@ -10,12 +10,23 @@ resource "aws_vpc" "main" {
   }
 }
 
-resource "aws_subnet" "public" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
+resource "aws_subnet" "public_a" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "us-east-1a"
 
   tags = {
-    Name = "public-subnet"
+    Name = "public-subnet-a"
+  }
+}
+
+resource "aws_subnet" "public_b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "us-east-1b"
+
+  tags = {
+    Name = "public-subnet-b"
   }
 }
 
@@ -30,7 +41,7 @@ resource "aws_internet_gateway" "gateway" {
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
-  route = {
+  route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.gateway.id
   }
@@ -40,8 +51,13 @@ resource "aws_route_table" "public" {
   }
 }
 
-resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_b" {
+  subnet_id      = aws_subnet.public_b.id
   route_table_id = aws_route_table.public.id
 }
 
@@ -77,6 +93,13 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -95,11 +118,12 @@ resource "aws_key_pair" "deployer" {
 }
 
 resource "aws_instance" "app_instance" {
-  ami             = "ami-0bb84b8ffd87024d8"
-  instance_type   = "t2.micro"
-  key_name        = aws_key_pair.deployer.key_name
-  subnet_id       = aws_subnet.public.id
-  security_groups = [aws_security_group.app_sg.name]
+  ami                         = "ami-0bb84b8ffd87024d8"
+  instance_type               = "t2.micro"
+  key_name                    = aws_key_pair.deployer.key_name
+  subnet_id                   = aws_subnet.public_a.id
+  security_groups             = [aws_security_group.app_sg.id]
+  associate_public_ip_address = true
 
   tags = {
     Name = "AppInstance"
@@ -135,7 +159,7 @@ resource "aws_lb" "app_lb" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.elb_sg.id]
-  subnets            = [aws_subnet.public.id]
+  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
 
   tags = {
     Name = "app-lb"
@@ -143,17 +167,17 @@ resource "aws_lb" "app_lb" {
 }
 
 resource "aws_lb_target_group" "app_tg" {
-  name = "app-tg"
-  port = 3000
+  name     = "app-tg"
+  port     = 3000
   protocol = "HTTP"
-  vpc_id = aws_vpc.main.id
+  vpc_id   = aws_vpc.main.id
 
   health_check {
-    path = "/"
-    protocol = "HTTP"
-    interval = 30
-    timeout = 5
-    healthy_threshold = 2
+    path                = "/"
+    protocol            = "HTTP"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
     unhealthy_threshold = 2
   }
 
@@ -164,11 +188,11 @@ resource "aws_lb_target_group" "app_tg" {
 
 resource "aws_lb_listener" "app_lb_listener" {
   load_balancer_arn = aws_lb.app_lb.arn
-  port = 80
-  protocol = "HTTP"
+  port              = 80
+  protocol          = "HTTP"
 
   default_action {
-    type = "forward"
+    type             = "forward"
     target_group_arn = aws_lb_target_group.app_tg.arn
   }
 
@@ -179,6 +203,6 @@ resource "aws_lb_listener" "app_lb_listener" {
 
 resource "aws_lb_target_group_attachment" "app_tg_attachment" {
   target_group_arn = aws_lb_target_group.app_tg.arn
-  target_id = aws_instance.app_instance.id
-  port = 3000
+  target_id        = aws_instance.app_instance.id
+  port             = 3000
 }
