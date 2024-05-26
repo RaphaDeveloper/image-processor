@@ -1,5 +1,52 @@
-provider "aws" {
+locals {
   region = "us-east-1"
+}
+
+provider "aws" {
+  region = local.region
+}
+
+resource "aws_s3_bucket" "images_bucket" {
+  bucket_prefix = "images-bucket"
+
+  tags = {
+    Name = "images-bucket"
+  }
+}
+
+resource "aws_sqs_queue" "images_queue_deadletter" {
+  name = "images-queue-deadletter"
+
+  tags = {
+    Name = "images-queue-deadletter"
+  }
+}
+
+resource "aws_dynamodb_table" "images_table" {
+  name         = "images-table"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = {
+    Name = "images-table"
+  }
+}
+
+resource "aws_sqs_queue" "images_queue" {
+  name = "images-queue"
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.images_queue_deadletter.arn
+    maxReceiveCount     = 4
+  })
+
+  tags = {
+    Name = "images-queue"
+  }
 }
 
 resource "aws_vpc" "main" {
@@ -117,6 +164,63 @@ resource "aws_key_pair" "deployer" {
   public_key = file("~/.ssh/id_rsa.pub")
 }
 
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  inline_policy {
+    name = "ec2_inline_policy"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject"
+          ]
+          Resource = [
+            aws_s3_bucket.images_bucket.arn,
+            "${aws_s3_bucket.images_bucket.arn}/*"
+          ]
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "sqs:SendMessage"
+          ]
+          Resource = aws_sqs_queue.images_queue.arn
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "dynamodb:PutItem",
+            "dynamodb:GetItem"
+          ],
+          Resource = aws_dynamodb_table.images_table.arn
+        }
+      ]
+    })
+  }
+}
+
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "ec2-instance-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
 resource "aws_instance" "app_instance" {
   ami                         = "ami-0bb84b8ffd87024d8"
   instance_type               = "t2.micro"
@@ -124,6 +228,7 @@ resource "aws_instance" "app_instance" {
   subnet_id                   = aws_subnet.public_a.id
   security_groups             = [aws_security_group.app_sg.id]
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.ec2_instance_profile.name
 
   tags = {
     Name = "AppInstance"
@@ -144,6 +249,10 @@ resource "aws_instance" "app_instance" {
       "sudo yum install -y nodejs",
       "git clone https://github.com/RaphaDeveloper/image-processor.git",
       "cd image-processor",
+      "echo 'AWS_REGION=${local.region}' >> .env",
+      "echo 'S3_BUCKET_NAME=${aws_s3_bucket.images_bucket.bucket}' >> .env",
+      "echo 'SQS_QUEUE_URL=${aws_sqs_queue.images_queue.url}' >> .env",
+      "echo 'DYNAMODB_TABLE_NAME=${aws_dynamodb_table.images_table.name}' >> .env",
       "npm install",
       "sudo npm install -g pm2",
       "pm2 start app.js --name node-app",
