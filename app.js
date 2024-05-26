@@ -33,8 +33,8 @@ app.post("/upload", upload.single("image"), (req, res) => {
         ACL: "public-read"
     };
 
-    s3.upload(s3Params, (err, data) => {
-        if (err) {
+    s3.upload(s3Params, (error, data) => {
+        if (error) {
             console.error('Error:', error);
             res.status(500).send('Error processing request.');
         }
@@ -50,9 +50,9 @@ app.post("/upload", upload.single("image"), (req, res) => {
             }
         };
 
-        dynamoDb.put(dynamoDbParams, (err) => {
-            if (err) {
-                console.error('Error:', err);
+        dynamoDb.put(dynamoDbParams, (error) => {
+            if (error) {
+                console.error('Error:', error);
                 res.status(500).send('Error processing request.');
             }
 
@@ -65,8 +65,8 @@ app.post("/upload", upload.single("image"), (req, res) => {
                 })
             };
 
-            sqs.sendMessage(sqsParams, (err) => {
-                if (err) {
+            sqs.sendMessage(sqsParams, (error) => {
+                if (error) {
                     console.error('Error:', error);
                     res.status(500).send('Error processing request.');
                 }
@@ -87,9 +87,9 @@ app.get("/view/:id", (req, res) => {
         }
     };
 
-    dynamoDb.get(dynamoDbParams, (err, data) => {
-        if (err) {
-            console.error('Error:', err);
+    dynamoDb.get(dynamoDbParams, (error, data) => {
+        if (error) {
+            console.error('Error:', error);
             res.status(500).send('Error processing request.');
         }
 
@@ -102,9 +102,9 @@ app.get("/view/:id", (req, res) => {
             Key: data.Item.processedFileName,
         };
 
-        s3.getObject(s3Params, (err, data) => {
-            if (err) {
-                console.error('Error:', err);
+        s3.getObject(s3Params, (error, data) => {
+            if (error) {
+                console.error('Error:', error);
                 res.status(500).send('Error processing request.');
             }
 
