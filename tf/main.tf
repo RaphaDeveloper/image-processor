@@ -282,7 +282,7 @@ resource "aws_lb_target_group" "app_tg" {
   vpc_id   = aws_vpc.main.id
 
   health_check {
-    path                = "/"
+    path                = "/health_check"
     protocol            = "HTTP"
     interval            = 30
     timeout             = 5

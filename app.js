@@ -16,6 +16,10 @@ const s3 = new AWS.S3();
 const sqs = new AWS.SQS();
 const dynamoDb = new AWS.DynamoDB.DocumentClient();
 
+app.get("/health_check", (req, res) => {
+    res.status(200).send();
+});
+
 app.post("/upload", upload.single("image"), (req, res) => {
     const id = uuidv4();
 
