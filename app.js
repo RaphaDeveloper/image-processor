@@ -81,7 +81,7 @@ app.get("/view/:id", (req, res) => {
 
     const dynamoDbParams = {
         TableName: process.env.DYNAMODB_TABLE_NAME,
-        Item: {
+        Key: {
             id
         }
     };
